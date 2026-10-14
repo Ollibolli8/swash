@@ -62,22 +62,6 @@ async function start() {
   canvas.addEventListener("pointerup", lift);
   canvas.addEventListener("pointercancel", lift);
 
-  // The word keeps clear of the text over the beach.
-  const head = host.querySelector<HTMLElement>(".sw-head")!;
-  const clear = () => {
-    const c = canvas.getBoundingClientRect(), h = head.getBoundingClientRect();
-    return [{ left: h.left - c.left, top: h.top - c.top, right: h.right - c.left, bottom: h.bottom - c.top }];
-  };
-  form.addEventListener("submit", e => {
-    e.preventDefault();
-    const word = input.value.trim();
-    if (!word) { input.focus(); return; }
-    void swash.write(word, clear());
-    input.value = "";
-    // On a phone the keyboard would hide the beach.
-    if (matchMedia("(pointer: coarse)").matches) input.blur();
-  });
-
   const sound = createSound(swash);
   soundButton.addEventListener("click", () => {
     const on = !sound.on;
@@ -86,8 +70,26 @@ async function start() {
     soundButton.textContent = on ? "Sound on" : "Sound off";
   });
 
-  // The name, written by the hand as the page opens.
-  setTimeout(() => void swash.write("Swash", clear()), reduced.matches ? 0 : 700);
+  // The name (or a word typed while the beach loaded), written by the hand as the page opens.
+  setTimeout(() => { ready = swash; void swash.write(pending, clear()); }, reduced.matches ? 0 : 700);
 }
+
+// The word keeps clear of the text over the beach.
+const head = host.querySelector<HTMLElement>(".sw-head")!;
+const clear = () => {
+  const c = canvas.getBoundingClientRect(), h = head.getBoundingClientRect();
+  return [{ left: h.left - c.left, top: h.top - c.top, right: h.right - c.left, bottom: h.bottom - c.top }];
+};
+let ready: Swash | null = null, pending = "Swash";
+form.addEventListener("submit", e => {
+  e.preventDefault();
+  const word = input.value.trim();
+  if (!word) { input.focus(); return; }
+  if (ready) void ready.write(word, clear());
+  else pending = word;
+  input.value = "";
+  // On a phone the keyboard would hide the beach.
+  if (matchMedia("(pointer: coarse)").matches) input.blur();
+});
 
 void start();
