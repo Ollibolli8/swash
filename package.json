@@ -1,0 +1,40 @@
+{
+  "name": "swash",
+  "version": "1.0.0",
+  "description": "Write in the sand and the sea takes it back: a live shallow-water simulation of the surf on a beach, in WebGPU compute with three.js TSL.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Oliver Kure Olsen (https://work.draindk.tech)",
+  "repository": "github:Ollibolli8/swash",
+  "keywords": [
+    "webgpu",
+    "tsl",
+    "three.js",
+    "shallow-water",
+    "simulation",
+    "surf",
+    "caustics",
+    "foam",
+    "typography",
+    "shader"
+  ],
+  "main": "src/swash.ts",
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "npm run build && npx --yes serve docs",
+    "check": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "three": ">=0.186.0"
+  },
+  "devDependencies": {
+    "@fontsource/nothing-you-could-do": "^5.3.0",
+    "@types/three": "0.186.0",
+    "esbuild": "^0.28.2",
+    "three": "0.186.1",
+    "typescript": "^5.9.0"
+  }
+}

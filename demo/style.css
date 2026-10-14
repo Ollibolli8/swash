@@ -1,0 +1,47 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #d9cbb3; }
+body { font: 500 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color: #2b241b; -webkit-font-smoothing: antialiased; }
+.sw { position: relative; height: 100svh; min-height: 320px; overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; }
+.sw-beach, .sw-still, .sw-film { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; }
+.sw-beach { opacity: 0; transition: opacity .6s ease; cursor: crosshair; }
+.sw[data-gpu="on"] .sw-beach { opacity: 1; }
+.sw[data-gpu="off"] .sw-beach { display: none; }
+.sw-head { position: absolute; z-index: 1; left: clamp(20px, 4vw, 48px); top: clamp(20px, 5vh, 48px); max-width: min(340px, 82vw); pointer-events: none; }
+.sw-head h1 { margin: 0 0 8px; font-size: clamp(22px, 2.2vw, 30px); letter-spacing: -.03em; line-height: 1.05; }
+.sw-head p { margin: 0; font-size: clamp(15px, 1.1vw, 17px); text-wrap: pretty; }
+.sw-head .sw-note { margin-top: 10px; font-weight: 600; }
+.sw-write {
+  position: absolute; z-index: 2; left: 50%; bottom: clamp(20px, 5vh, 40px); transform: translateX(-50%);
+  display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 999px; background: rgb(255 255 255 / .86);
+  box-shadow: 0 1px 2px rgb(11 34 51 / .12);
+}
+.sw-write input {
+  width: min(220px, 52vw); padding: 7px 4px 7px 14px; border: 0; background: none; color: #0b2233; outline: none;
+  font: 600 15px/1.2 system-ui, -apple-system, sans-serif; -webkit-user-select: text; user-select: text;
+}
+.sw-write input::placeholder { color: rgb(11 34 51 / .55); }
+.sw-write button, .sw-sound {
+  padding: 9px 14px; border: 0; border-radius: 999px; font: 600 13px/1 system-ui, -apple-system, sans-serif; cursor: pointer;
+  transition: background-color .15s ease, color .15s ease, transform .15s ease;
+}
+.sw-write button { background: #0b2233; color: #fff; }
+.sw-write button:hover { background: #17384f; }
+.sw-write button:active, .sw-sound:active { transform: scale(.96); }
+.sw-write:focus-within { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #0b2233; }
+.sw-sound { position: absolute; z-index: 2; right: clamp(20px, 4vw, 48px); bottom: clamp(20px, 5vh, 40px); background: rgb(255 255 255 / .86); color: #0b2233; }
+.sw-sound:hover { background: #fff; }
+.sw-sound[aria-pressed="true"] { background: #0b2233; color: #fff; }
+.sw-sound:focus-visible, .sw-write button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.sw-foot { position: absolute; z-index: 1; left: clamp(20px, 4vw, 48px); bottom: clamp(20px, 5vh, 40px); margin: 0; padding: 8px 0; font-size: 13px; color: #fff; text-shadow: 0 1px 2px rgb(11 34 51 / .35); }
+.sw-foot a { color: inherit; }
+.sw[data-gpu="off"] .sw-write { display: none; }
+@media (max-width: 640px) {
+  .sw-write { left: 16px; right: 16px; transform: none; bottom: 64px; }
+  .sw-write input { flex: 1; width: auto; }
+  .sw-sound { right: 16px; bottom: 16px; }
+  .sw-foot { left: 16px; bottom: 16px; }
+  .sw-head { left: 16px; top: 16px; right: 16px; max-width: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sw-beach { transition: none; }
+}

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Swash · write in the sand</title>
+  <meta name="description" content="Write in the sand and the sea takes it back: the surf on a beach simulated live, waves breaking, running up and draining away. WebGPU compute with three.js TSL.">
+  <meta name="theme-color" content="#d9cbb3">
+  <link rel="stylesheet" href="main.css">
+</head>
+<body>
+  <main class="sw" id="beach" data-gpu="loading">
+    <picture>
+      <source media="(orientation: portrait)" srcset="poster-tall.webp">
+      <img class="sw-still" src="poster.webp" alt="">
+    </picture>
+    <canvas class="sw-beach" aria-hidden="true"></canvas>
+    <header class="sw-head">
+      <h1>Swash</h1>
+      <p>Write in the sand and the sea takes it back. Each wave breaks, runs up the beach and drains away, and fills whatever you draw in its path. Draw in the sand, or write a word.</p>
+      <p class="sw-note" hidden>This browser has no WebGPU, so this is a recording.</p>
+    </header>
+    <form class="sw-write" autocomplete="off">
+      <input name="word" maxlength="20" placeholder="Write a word" enterkeyhint="send" spellcheck="false" aria-label="A word to write in the sand">
+      <button type="submit">Write</button>
+    </form>
+    <button class="sw-sound" type="button" aria-pressed="false">Sound off</button>
+    <p class="sw-foot"><a href="https://github.com/Ollibolli8/swash">Source</a> · <a href="https://work.draindk.tech">Oliver Kure Olsen</a></p>
+  </main>
+  <script type="module" src="main.js"></script>
+</body>
+</html>
