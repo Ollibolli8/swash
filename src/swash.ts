@@ -7,6 +7,7 @@ import { createCaustics } from "./optics";
 import { createRipples } from "./ripples";
 import { BANDS, SURF, createSurf } from "./surf";
 import { createWake } from "./wake";
+import { guardWebGPU } from "./webgpu-guard";
 import { paintInk, setWord } from "./writing";
 
 export { BANDS } from "./surf";
@@ -69,6 +70,7 @@ type Stroke = { a: THREE.Vector2; b: THREE.Vector2; push: THREE.Vector2 };
 export async function createSwash(options: SwashOptions): Promise<Swash> {
   const { canvas } = options;
   if (!("gpu" in navigator)) throw new Error("WebGPU unavailable");
+  guardWebGPU();
   const params = new URLSearchParams(location.search);
   const debug = params.has("swash-debug");
   const renderer = new THREE.WebGPURenderer({ canvas, antialias: false, alpha: false, powerPreference: "high-performance" });
