@@ -11,4 +11,4 @@ await build({
 });
 cpSync("demo/index.html", "docs/index.html");
 cpSync("demo/sand", "docs/sand", { recursive: true });
-for (const file of ["poster.webp", "poster-tall.webp", "swash.mp4", "swash-tall.mp4"]) if (existsSync(`demo/${file}`)) cpSync(`demo/${file}`, `docs/${file}`);
+for (const file of ["poster.webp", "poster-tall.webp", "swash.mp4", "swash-tall.mp4", "swash.webm", "swash-tall.webm"]) if (existsSync(`demo/${file}`)) cpSync(`demo/${file}`, `docs/${file}`);

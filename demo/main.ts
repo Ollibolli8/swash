@@ -19,7 +19,9 @@ function fallBack() {
   const tall = matchMedia("(orientation: portrait)").matches ? "-tall" : "";
   const film = document.createElement("video");
   film.className = "sw-film";
-  Object.assign(film, { src: `swash${tall}.mp4`, poster: `poster${tall}.webp`, muted: true, loop: true, playsInline: true, autoplay: !reduced.matches });
+  // H.264 where the browser has it, else VP9 (a Chromium built without proprietary codecs).
+  const type = film.canPlayType('video/mp4; codecs="avc1.640028"') ? "mp4" : "webm";
+  Object.assign(film, { src: `swash${tall}.${type}`, poster: `poster${tall}.webp`, muted: true, loop: true, playsInline: true, autoplay: !reduced.matches });
   film.setAttribute("aria-hidden", "true");
   host.querySelector("picture")!.after(film);
 }
