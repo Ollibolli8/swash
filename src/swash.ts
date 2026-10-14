@@ -28,6 +28,8 @@ export type SwashOptions = {
   font: string;
   /** One still frame instead of the running sea (reduced motion). Drawing and writing still mark the sand. */
   still?: boolean;
+  /** After each frame the running sea draws (`now` from requestAnimationFrame), for a host's frame meter. */
+  onFrame?: (now: number) => void;
 };
 
 export type Listening = {
@@ -180,6 +182,7 @@ export async function createSwash(options: SwashOptions): Promise<Swash> {
       if (n > 0) step(n);
       wake.update(delta);
       draw();
+      options.onFrame?.(now);
     };
     const running = () => playing && !still && visible;
     const sync = () => {
