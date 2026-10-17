@@ -4,7 +4,7 @@ Write in the sand and the sea takes it back. A live simulation of the surf on a 
 each wave breaks, runs up the sand, stops and drains away, and fills whatever you draw or write in its path. Draw
 with a finger or the mouse, or type a word and a hand writes it.
 
-**[Live demo](https://ollibolli8.github.io/swash/)** · Maquette 02 by [Oliver Kure Olsen](https://work.draindk.tech)
+**[Live demo](https://ollibolli8.github.io/swash/)** · Maquette 02 on [work.draindk.tech](https://work.draindk.tech/lab/swash/)
 
 WebGPU compute and three.js TSL, in TypeScript. The same surf runs under a client's website.
 
