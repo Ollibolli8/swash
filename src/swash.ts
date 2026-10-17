@@ -1,5 +1,5 @@
 import * as THREE from "three/webgpu";
-import { uniform } from "three/tsl";
+import { array, float, uniform, vec4, vertexIndex } from "three/tsl";
 import { createLace } from "./foam";
 import { WORLD_M } from "./light";
 import { createMaterial } from "./material";
@@ -121,6 +121,11 @@ export async function createSwash(options: SwashOptions): Promise<Swash> {
       surface: surf.surface, drift: surf.drift, matter: surf.matter, groove: surf.groove, cells: [surf.nx, surf.ny], debugView: debug && params.has("surf-view") });
     cleanup.push(() => material.dispose());
     const quad = new THREE.QuadMesh(material);
+    // Drawn as a scene of its own, with QuadMesh's clip-space vertex kept on the material: three compiles a bare mesh
+    // with a Scene's lights and without the vertex that QuadMesh.render() swaps in, so the compile below never matched
+    // the draw, and the first frame built the beach's shader again (17 October).
+    material.vertexNode = vec4(array([float(-1), float(-1), float(3)]).element(vertexIndex), array([float(3), float(-1), float(-1)]).element(vertexIndex), 0, 1);
+    const view = new THREE.Scene().add(quad);
 
     let width = 1, height = 1, still = !!options.still, playing = false, visible = !document.hidden;
     let raf = 0, redrawRaf = 0, previous = 0, accumulator = 0, slow = 0;
@@ -138,7 +143,7 @@ export async function createSwash(options: SwashOptions): Promise<Swash> {
       u.time.value = surf.time();
       ripples.update(u.time.value);
       optics.update();
-      quad.render(renderer);
+      renderer.render(view, quad.camera);
     };
     /** Screen-height world units to metres on the strip, wrapped into it. */
     const toStrip = (p: THREE.Vector2) => {
@@ -227,7 +232,7 @@ export async function createSwash(options: SwashOptions): Promise<Swash> {
     await breathe();
     optics.update();
     await breathe();
-    await renderer.compileAsync(quad, quad.camera);
+    await renderer.compileAsync(view, quad.camera);
     warming = false;
     draw();
     if (lost) throw new Error("WebGPU device lost while starting");
