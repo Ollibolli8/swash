@@ -4,8 +4,14 @@
  * createView throws and a three WebGPU scene dies on its first pass. "rgba" is the identity, the same as no swizzle,
  * so the first time a view is refused for it this drops the member from then on. Browsers that take the string never
  * reach the catch. Called before the renderer starts; calling it twice is harmless.
+ *
+ * Its compileAsync also gives the page a turn after every object and every shader stage it builds: scheduler.yield()
+ * where there is one, otherwise a requestAnimationFrame, a whole frame a turn. Safari has no scheduler, so a compile
+ * there took a frame a stage. Where yield is missing the turn becomes a message: a task like any other, so a frame
+ * that is due still goes first.
  */
 export function guardWebGPU() {
+  fillYield();
   type Desc = { swizzle?: unknown; [key: string]: unknown };
   type CreateView = ((this: object, d?: Desc) => unknown) & { guarded?: true };
   const proto = (globalThis as { GPUTexture?: { prototype: { createView: CreateView } } }).GPUTexture?.prototype;
@@ -23,4 +29,15 @@ export function guardWebGPU() {
   };
   guarded.guarded = true;
   proto.createView = guarded;
+}
+
+function fillYield() {
+  type Scheduler = { yield?: () => Promise<void> };
+  const g = globalThis as { scheduler?: Scheduler };
+  if (g.scheduler?.yield || typeof MessageChannel === "undefined") return;
+  const waiting: (() => void)[] = [], channel = new MessageChannel();
+  channel.port1.onmessage = () => waiting.shift()?.();
+  const turn = () => new Promise<void>(r => { waiting.push(r); channel.port2.postMessage(0); });
+  if (g.scheduler) g.scheduler.yield = turn;
+  else Object.defineProperty(g, "scheduler", { value: { yield: turn } satisfies Scheduler, configurable: true, writable: true });
 }
