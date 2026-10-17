@@ -7,11 +7,12 @@
  *
  * Its compileAsync also gives the page a turn after every object and every shader stage it builds: scheduler.yield()
  * where there is one, otherwise a requestAnimationFrame, a whole frame a turn. Safari has no scheduler, so a compile
- * there took a frame a stage. Where yield is missing the turn becomes a message: a task like any other, so a frame
- * that is due still goes first.
+ * there took a frame a stage, and Chrome runs yield's continuations ahead of rendering, so a long compile drew a frame
+ * only every 100 ms or so, when its starvation guard let one through. So the turn is a message everywhere: a task like
+ * any other, so a frame that is due goes first.
  */
 export function guardWebGPU() {
-  fillYield();
+  paceYield();
   type Desc = { swizzle?: unknown; [key: string]: unknown };
   type CreateView = ((this: object, d?: Desc) => unknown) & { guarded?: true };
   const proto = (globalThis as { GPUTexture?: { prototype: { createView: CreateView } } }).GPUTexture?.prototype;
@@ -31,13 +32,14 @@ export function guardWebGPU() {
   proto.createView = guarded;
 }
 
-function fillYield() {
-  type Scheduler = { yield?: () => Promise<void> };
-  const g = globalThis as { scheduler?: Scheduler };
-  if (g.scheduler?.yield || typeof MessageChannel === "undefined") return;
+function paceYield() {
+  type Turn = (() => Promise<void>) & { paced?: true };
+  const g = globalThis as { scheduler?: { yield?: Turn } };
+  if (g.scheduler?.yield?.paced || typeof MessageChannel === "undefined") return;
   const waiting: (() => void)[] = [], channel = new MessageChannel();
   channel.port1.onmessage = () => waiting.shift()?.();
-  const turn = () => new Promise<void>(r => { waiting.push(r); channel.port2.postMessage(0); });
+  const turn: Turn = () => new Promise<void>(r => { waiting.push(r); channel.port2.postMessage(0); });
+  turn.paced = true;
   if (g.scheduler) g.scheduler.yield = turn;
-  else Object.defineProperty(g, "scheduler", { value: { yield: turn } satisfies Scheduler, configurable: true, writable: true });
+  else Object.defineProperty(g, "scheduler", { value: { yield: turn }, configurable: true, writable: true });
 }
