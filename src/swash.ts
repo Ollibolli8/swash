@@ -100,10 +100,12 @@ export async function createSwash(options: SwashOptions): Promise<Swash> {
         t.anisotropy = Math.min(4, renderer.getMaxAnisotropy());
         return t;
       })));
-    // From here the start is a few short tasks rather than one long one (0.6 s of a slow phone on arrival; 17 October):
-    // a break after the lace is laid, after each 120 steps of the warm-up, and between the first draw's passes. (Nothing
+    // From here the start is short tasks rather than one long one (0.6 s of a slow phone on arrival; 17 October): the
+    // pictures go up one at a time, the kernels and the sand's material are built ahead, a stage at a time, and there is
+    // a break after the lace is laid, after each 120 steps of the warm-up and between the first draw's passes. (Nothing
     // draws till then: resize() asks for a frame, which would build every pass at once.)
     const breathe = () => new Promise<void>(go => setTimeout(go, 0));
+    for (const t of [sand, normal, roughness]) { await breathe(); renderer.initTexture(t); }
     await breathe();
     const ripples = createRipples(renderer);
     cleanup.push(() => ripples.dispose());
@@ -215,6 +217,7 @@ export async function createSwash(options: SwashOptions): Promise<Swash> {
 
     canvas.dataset.backend = "webgpu"; canvas.dataset.sim = `swe-${surf.nx}x${surf.ny}`;
     resize();
+    await surf.compile();
     for (let left = Math.round((still ? STILL_AT : WARM) / surf.dt); left > 0; left -= 120) {
       step(Math.min(left, 120));
       await breathe();
@@ -224,6 +227,7 @@ export async function createSwash(options: SwashOptions): Promise<Swash> {
     await breathe();
     optics.update();
     await breathe();
+    await renderer.compileAsync(quad, quad.camera);
     warming = false;
     draw();
     if (lost) throw new Error("WebGPU device lost while starting");

@@ -172,6 +172,9 @@ export type Surf = {
   inkWas: THREE.UniformNode<"vec4", THREE.Vector4>;
   /** Advance the water by `steps` fixed steps and refresh the textures the renderer reads. */
   run: (steps: number) => void;
+  /** Build the kernels `run` dispatches ahead of it, a stage at a time between frames (built by the first `run`, they
+   *  held a slow phone for 0.28 s in one task). */
+  compile: () => Promise<void>;
   /** One more pass of the drawn grooves with no time passing. Their slopes are taken from the pass before, so a mark
    *  made while the sea stands still needs this to show its relief. */
   settle: () => void;
@@ -590,6 +593,11 @@ export function createSurf(renderer: THREE.WebGPURenderer, fine: boolean): Surf 
     brushes, brushRadius, push,
     ink, inkScale: 1 / gdx, inkOn, inkTo, inkBox, inkWas,
     run,
+    async compile() {
+      // (in three since r186; typed for it only from @types/three 0.186)
+      const r = renderer as unknown as { compileComputeAsync(nodes: THREE.ComputeNode[]): Promise<void> };
+      await r.compileComputeAsync([kernels.momentum, ...kernels.continuity, tick, ...kernels.pack]);
+    },
     settle() {
       if (!drawn) return;
       grooveDt.value = 0;
