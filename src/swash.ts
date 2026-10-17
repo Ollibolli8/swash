@@ -76,7 +76,7 @@ export async function createSwash(options: SwashOptions): Promise<Swash> {
   const renderer = new THREE.WebGPURenderer({ canvas, antialias: false, alpha: false, powerPreference: "high-performance" });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.NoToneMapping;
-  let lost = false, disposed = false;
+  let lost = false, disposed = false, warming = true;
   renderer.onDeviceLost = () => { lost = true; canvas.dispatchEvent(new Event("swash:lost")); };
   try {
     await renderer.init();
@@ -100,6 +100,11 @@ export async function createSwash(options: SwashOptions): Promise<Swash> {
         t.anisotropy = Math.min(4, renderer.getMaxAnisotropy());
         return t;
       })));
+    // From here the start is a few short tasks rather than one long one (0.6 s of a slow phone on arrival; 17 October):
+    // a break after the lace is laid, after each 120 steps of the warm-up, and between the first draw's passes. (Nothing
+    // draws till then: resize() asks for a frame, which would build every pass at once.)
+    const breathe = () => new Promise<void>(go => setTimeout(go, 0));
+    await breathe();
     const ripples = createRipples(renderer);
     cleanup.push(() => ripples.dispose());
     // Rings from a pointer moving over the water (none on touch screens, where nothing hovers).
@@ -109,6 +114,7 @@ export async function createSwash(options: SwashOptions): Promise<Swash> {
     cleanup.push(() => optics.dispose());
     const lace = createLace(renderer);
     cleanup.push(() => lace.dispose());
+    await breathe();
     const material = createMaterial({ ...u, sand, normal, roughness, caustics: optics.texture, lace, ripples: ripples.texture, wake: wake.texture,
       surface: surf.surface, drift: surf.drift, matter: surf.matter, groove: surf.groove, cells: [surf.nx, surf.ny], debugView: debug && params.has("surf-view") });
     cleanup.push(() => material.dispose());
@@ -126,7 +132,7 @@ export async function createSwash(options: SwashOptions): Promise<Swash> {
     const heard = { sand: 0, water: 0, x: 0 };
 
     const draw = () => {
-      if (disposed || lost || !visible) return;
+      if (disposed || lost || !visible || warming) return;
       u.time.value = surf.time();
       ripples.update(u.time.value);
       optics.update();
@@ -209,7 +215,16 @@ export async function createSwash(options: SwashOptions): Promise<Swash> {
 
     canvas.dataset.backend = "webgpu"; canvas.dataset.sim = `swe-${surf.nx}x${surf.ny}`;
     resize();
-    advance(still ? STILL_AT : WARM);
+    for (let left = Math.round((still ? STILL_AT : WARM) / surf.dt); left > 0; left -= 120) {
+      step(Math.min(left, 120));
+      await breathe();
+    }
+    u.time.value = surf.time();
+    ripples.update(u.time.value);
+    await breathe();
+    optics.update();
+    await breathe();
+    warming = false;
     draw();
     if (lost) throw new Error("WebGPU device lost while starting");
 
