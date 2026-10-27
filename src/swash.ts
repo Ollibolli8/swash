@@ -128,7 +128,7 @@ export async function createSwash(options: SwashOptions): Promise<Swash> {
     const view = new THREE.Scene().add(quad);
 
     let width = 1, height = 1, still = !!options.still, playing = false, visible = !document.hidden;
-    let raf = 0, redrawRaf = 0, previous = 0, accumulator = 0, slow = 0;
+    let raf = 0, redrawRaf = 0, previous = 0, grid = 0, accumulator = 0, slow = 0;
     let last: THREE.Vector2 | null = null, lastAt = 0, down = false, hovered: THREE.Vector2 | null = null, hoveredAt = 0;
     const strokes: Stroke[] = [];
     let pixelRatio = Math.min(devicePixelRatio || 1, coarse ? 1.25 : 1.75);
@@ -184,7 +184,12 @@ export async function createSwash(options: SwashOptions): Promise<Swash> {
     const frame = (now: number) => {
       if (disposed || lost || !running()) return;
       raf = requestAnimationFrame(frame);
-      if (previous && now - previous < 1000 / 62) return;
+      // 60 fps at most: on a 120 Hz screen every other refresh is skipped. The frames keep to a 16.7 ms grid and a
+      // refresh up to 3 ms early still draws: Safari's timestamps are whole milliseconds (16, 17, 17, 16…), and a cap of
+      // 1000/62 skipped every 16 there (38 fps, then fewer pixels).
+      const gap = now - grid;
+      if (grid && gap < 1000 / 60 - 3) return;
+      grid = grid && gap < 1000 / 30 ? grid + 1000 / 60 : now;
       const elapsed = previous ? (now - previous) / 1000 : 1 / 60;
       slow = elapsed > 0.025 ? slow + 1 : Math.max(0, slow - 1);
       if (slow > 45 && pixelRatio > 0.8) { pixelRatio *= 0.85; renderer.setPixelRatio(pixelRatio); renderer.setSize(width, height, false); slow = 0; }
@@ -201,7 +206,7 @@ export async function createSwash(options: SwashOptions): Promise<Swash> {
     };
     const running = () => playing && !still && visible;
     const sync = () => {
-      cancelAnimationFrame(raf); previous = 0;
+      cancelAnimationFrame(raf); previous = grid = 0;
       if (running() && !disposed) raf = requestAnimationFrame(frame);
       else redraw();
       canvas.dataset.playing = String(running());
