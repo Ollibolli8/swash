@@ -103,16 +103,16 @@ export function createMaterial(u: SwashUniforms): THREE.MeshBasicNodeMaterial {
     const boxPx = screenSize.mul(box.zw.sub(box.xy)).toVar();
     const pixel = float(1).div(max(boxPx.y, 1)).toVar();
     // Round a framed beach: the page. Inside the frame's rounded box, the beach (inside); above its top edge, the page
-    // with the sea let onto it, for as far as it runs (above), fading out past the frame's sides and before the
-    // canvas's edge; anywhere else the page alone.
+    // with the sea let onto it, for as far as it runs (above): only over the edge itself, so it thins out before the
+    // frame's corners and never spreads past its sides, and fades before the canvas's edge; anywhere else the page alone.
     const edge = u.frameEdge as unknown as V2;
     const qd = abs(screen.sub(0.5).mul(boxPx)).sub(boxPx.mul(0.5)).add(edge.x);
     const sd = length(max(qd, vec2(0))).add(min(max(qd.x, qd.y), 0)).sub(edge.x);
     const inside = clamp(sd.mul(-1).add(0.5), 0, 1).toVar();
-    const side = max(max(screen.x.negate(), screen.x.sub(1)), 0).mul(boxPx.x);
+    const inX = min(screen.x, screen.x.oneMinus()).mul(boxPx.x);
     const rise = max(screen.y.negate(), 0).mul(boxPx.y);
     const toCanvasTop = canvasUV.y.mul(screenSize.y);
-    const above = smoothstep(0, 1, rise).mul(smoothstep(edge.y.mul(0.5), 0, side)).mul(smoothstep(0, edge.y.mul(0.35), toCanvasTop))
+    const above = smoothstep(0, 1, rise).mul(smoothstep(edge.x, edge.x.add(edge.y.mul(0.6)), inX)).mul(smoothstep(0, edge.y.mul(0.35), toCanvasTop))
       .mul(smoothstep(edge.y, edge.y.mul(0.55), rise)).toVar();
     const outside = inside.oneMinus().toVar();
     const pageColour = linear(sample(u.page, canvasUV).rgb).toVar();
@@ -181,8 +181,8 @@ export function createMaterial(u: SwashUniforms): THREE.MeshBasicNodeMaterial {
     sandColour.addAssign(vec3(0.15, 0.16, 0.14).mul(wetSheen).mul(moisture.add(glaze.mul(0.6))).mul(water.oneMinus()));
     sandColour.assign(mix(sandColour, sandColour.mul(vec3(0.9, 0.88, 0.85)).add(vec3(0.012, 0.016, 0.022)), glaze));
     const colour = linear(clamp(sandColour, vec3(0), vec3(1))).toVar();
-    // The page, wet: darker while it holds water, with a glaze that catches the sun.
-    const pageWet = pageColour.mul(moisture.mul(-0.35).add(1)).add(vec3(0.05, 0.055, 0.06).mul(wetSheen).mul(moisture.add(glaze))).toVar();
+    // The page, wet: darker while it holds water, with a faint glaze (on a dark page it shows only as a sheen that dries).
+    const pageWet = pageColour.mul(moisture.mul(-0.35).add(1)).add(vec3(0.022).mul(wetSheen).mul(moisture.add(glaze))).toVar();
     colour.assign(mix(colour, pageWet, outside));
 
     // Water, in linear light.
@@ -252,8 +252,11 @@ export function createMaterial(u: SwashUniforms): THREE.MeshBasicNodeMaterial {
       const ggx = a2.div(nh.mul(nh).mul(a2.sub(1)).add(1).pow(2).mul(Math.PI));
       const highlight = ggx.mul(fresnel(max(sun().dot(half), 0))).mul(1.2).mul(smoothstep(0.002, 0.02, film));
       const surface = under.mul(mirror.oneMinus()).add(reflected.mul(mirror)).add(vec3(1, 0.96, 0.88).mul(highlight)).toVar();
-      // On the page, a sheet of clear water over its dark ground: the sky in it, the sun's sheen, little else.
-      const onPage = pageWet.mul(0.82).mul(mirror.oneMinus()).add(reflected.mul(mirror)).add(vec3(1, 0.96, 0.88).mul(highlight)).add(vec3(0.004, 0.006, 0.007).mul(smoothstep(0.002, 0.03, film)));
+      // On the page, a sheet of clear water over its dark ground, seen from straight above: hardly there but for the sun's
+      // sheen, a faint sky, and its lip, the few millimetres at the front where the meniscus curls up and catches the sky.
+      const lip = smoothstep(0.0012, 0.0028, film).mul(smoothstep(0.009, 0.0035, film));
+      const onPage = pageWet.mul(0.82).mul(mirror.oneMinus()).add(reflected.mul(mirror.mul(0.35).add(lip.mul(0.3))))
+        .add(vec3(1, 0.96, 0.88).mul(highlight));
       colour.assign(mix(colour, mix(surface, onPage, outside), water));
     });
 
