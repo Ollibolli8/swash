@@ -1,5 +1,5 @@
 import * as THREE from "three/webgpu";
-import { Fn, If, abs, clamp, cos, exp, float, floor, fract, log2, max, min, mix, normalize, pow, reflect, refract, sRGBTransferEOTF, screenSize, sin, smoothstep, texture, uv, vec2, vec3, vec4 } from "three/tsl";
+import { Fn, If, abs, clamp, cos, exp, float, floor, fract, length, log2, max, min, mix, normalize, pow, reflect, refract, sRGBTransferEOTF, screenSize, sin, smoothstep, texture, uv, vec2, vec3, vec4 } from "three/tsl";
 import { foamCover, LACE_TILE } from "./foam";
 import { DISPERSION, offStrip, stripUV, toMetres } from "./optics";
 import { ripplesAt } from "./ripples";
@@ -38,6 +38,12 @@ export type SwashUniforms = {
   aspect: THREE.UniformNode<"float", number>;
   /** World y at the top of the view (screen heights). */
   cam: THREE.UniformNode<"float", number>;
+  /** Framed (swash.ts `frame`): the view's box in the canvas (screen UV, top-down: left, top, right, bottom; 0 0 1 1
+   *  unframed), and in device px the box's corner radius and how far the sea may run past its top edge. */
+  frame: THREE.UniformNode<"vec4", THREE.Vector4>;
+  frameEdge: THREE.UniformNode<"vec2", THREE.Vector2>;
+  /** The page round a framed beach (display sRGB). */
+  page: THREE.Texture;
   sand: THREE.Texture;
   normal: THREE.Texture;
   roughness: THREE.Texture;
@@ -86,12 +92,30 @@ const shoulder = (c: V3) => {
 export function createMaterial(u: SwashUniforms): THREE.MeshBasicNodeMaterial {
   const material = new THREE.MeshBasicNodeMaterial({ depthTest: false, depthWrite: false, toneMapped: false });
   material.fragmentNode = Fn(() => {
-    // QuadMesh's WebGPU screen UV is top-down, like the world: the beach is at the top.
-    const screen = uv().toVar();
+    // QuadMesh's WebGPU screen UV is top-down, like the world: the beach is at the top. Framed, the view is the frame's
+    // box and the world runs on past it.
+    const canvasUV = uv().toVar();
+    const box = u.frame as unknown as V4;
+    const screen = canvasUV.sub(box.xy).div(box.zw.sub(box.xy)).toVar();
     const t = u.time as unknown as F;
     const aspect = u.aspect as unknown as F;
     const w = vec2(screen.x.mul(aspect), u.cam.add(screen.y)).toVar();
-    const pixel = float(1).div(max(screenSize.y, 1)).toVar();
+    const boxPx = screenSize.mul(box.zw.sub(box.xy)).toVar();
+    const pixel = float(1).div(max(boxPx.y, 1)).toVar();
+    // Round a framed beach: the page. Inside the frame's rounded box, the beach (inside); above its top edge, the page
+    // with the sea let onto it, for as far as it runs (above), fading out past the frame's sides and before the
+    // canvas's edge; anywhere else the page alone.
+    const edge = u.frameEdge as unknown as V2;
+    const qd = abs(screen.sub(0.5).mul(boxPx)).sub(boxPx.mul(0.5)).add(edge.x);
+    const sd = length(max(qd, vec2(0))).add(min(max(qd.x, qd.y), 0)).sub(edge.x);
+    const inside = clamp(sd.mul(-1).add(0.5), 0, 1).toVar();
+    const side = max(max(screen.x.negate(), screen.x.sub(1)), 0).mul(boxPx.x);
+    const rise = max(screen.y.negate(), 0).mul(boxPx.y);
+    const toCanvasTop = canvasUV.y.mul(screenSize.y);
+    const above = smoothstep(0, 1, rise).mul(smoothstep(edge.y.mul(0.5), 0, side)).mul(smoothstep(0, edge.y.mul(0.35), toCanvasTop))
+      .mul(smoothstep(edge.y, edge.y.mul(0.55), rise)).toVar();
+    const outside = inside.oneMinus().toVar();
+    const pageColour = linear(sample(u.page, canvasUV).rgb).toVar();
     const m = toMetres(w, aspect).toVar();
     const q = stripUV(m).toVar();
 
@@ -157,6 +181,9 @@ export function createMaterial(u: SwashUniforms): THREE.MeshBasicNodeMaterial {
     sandColour.addAssign(vec3(0.15, 0.16, 0.14).mul(wetSheen).mul(moisture.add(glaze.mul(0.6))).mul(water.oneMinus()));
     sandColour.assign(mix(sandColour, sandColour.mul(vec3(0.9, 0.88, 0.85)).add(vec3(0.012, 0.016, 0.022)), glaze));
     const colour = linear(clamp(sandColour, vec3(0), vec3(1))).toVar();
+    // The page, wet: darker while it holds water, with a glaze that catches the sun.
+    const pageWet = pageColour.mul(moisture.mul(-0.35).add(1)).add(vec3(0.05, 0.055, 0.06).mul(wetSheen).mul(moisture.add(glaze))).toVar();
+    colour.assign(mix(colour, pageWet, outside));
 
     // Water, in linear light.
     If(water.greaterThan(0.001), () => {
@@ -225,7 +252,9 @@ export function createMaterial(u: SwashUniforms): THREE.MeshBasicNodeMaterial {
       const ggx = a2.div(nh.mul(nh).mul(a2.sub(1)).add(1).pow(2).mul(Math.PI));
       const highlight = ggx.mul(fresnel(max(sun().dot(half), 0))).mul(1.2).mul(smoothstep(0.002, 0.02, film));
       const surface = under.mul(mirror.oneMinus()).add(reflected.mul(mirror)).add(vec3(1, 0.96, 0.88).mul(highlight)).toVar();
-      colour.assign(mix(colour, surface, water));
+      // On the page, a sheet of clear water over its dark ground: the sky in it, the sun's sheen, little else.
+      const onPage = pageWet.mul(0.82).mul(mirror.oneMinus()).add(reflected.mul(mirror)).add(vec3(1, 0.96, 0.88).mul(highlight)).add(vec3(0.004, 0.006, 0.007).mul(smoothstep(0.002, 0.03, film)));
+      colour.assign(mix(colour, mix(surface, onPage, outside), water));
     });
 
     // Foam: the lace the flow has carried, the bore's dense roller, and foam left on the sand.
@@ -268,14 +297,14 @@ export function createMaterial(u: SwashUniforms): THREE.MeshBasicNodeMaterial {
       // Drying foam on sand is a little dingier.
       foam.assign(mix(foam, foam.mul(vec3(0.93, 0.91, 0.86)), onSand.mul(water.oneMinus())));
       const cover = max(opacity.mul(water), onSand).toVar();
-      colour.assign(mix(colour, foam, clamp(cover, 0, 1)));
+      colour.assign(mix(colour, foam, clamp(cover, 0, 1).mul(max(inside, above))));
     });
 
     // `?surf-view`: the solver's fields in false colour (red foam, green surface height ±0.25 m, blue slope to 1).
     if (u.debugView) {
       return vec4(min(foamAmount, 1), clamp(eta.mul(2).add(0.5), 0, 1).mul(sea), clamp(slope.length(), 0, 1).mul(sea), 1);
     }
-    return vec4(shoulder(colour), 1);
+    return vec4(shoulder(mix(pageColour, colour, max(inside, above))), 1);
   })();
   return material;
 }

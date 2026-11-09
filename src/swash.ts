@@ -31,6 +31,18 @@ export type SwashOptions = {
   still?: boolean;
   /** After each frame the running sea draws (`now` from requestAnimationFrame), for a host's frame meter. */
   onFrame?: (now: number) => void;
+  /** The beach is only this box of the canvas ([left, top, right, bottom] as shares of its width and height from the
+   *  top left), a card on a page: round it the canvas shows `source`, and a swash that runs past the box's top edge
+   *  runs on over the page, wets it and drains back. `pointer` and `write` then work in the box. */
+  frame?: [number, number, number, number];
+  /** The framed beach's corner radius, CSS px. */
+  radius?: number;
+  /** How far, CSS px, the sea may run on over the page past the frame's top edge before it fades. */
+  rise?: number;
+  /** The page round a framed beach, the size of the canvas (a canvas or a decoded picture). Black without one. */
+  source?: HTMLCanvasElement | HTMLImageElement | ImageBitmap;
+  /** The view's top, world y in view heights (by default -0.46 on a wide view, -0.52 on a tall one). */
+  top?: number;
 };
 
 export type Listening = {
@@ -55,6 +67,9 @@ export type Swash = {
   write: (text: string, keepClear?: Array<{ left: number; top: number; right: number; bottom: number }>) => Promise<void>;
   play: (on: boolean) => void;
   setStill: (still: boolean) => void;
+  /** Moves the view's top to `top` (as the `top` option) over `seconds`. Lower down the beach (a larger top) the sea
+   *  fills more of the view and the swash runs up nearer its top edge: a framed beach lets it run on over the page. */
+  pan: (top: number, seconds?: number) => void;
   /** What the surf and the hand sound like now (sound.ts). */
   listen: () => Promise<Listening>;
   dispose: () => void;
@@ -90,7 +105,13 @@ export async function createSwash(options: SwashOptions): Promise<Swash> {
     // Phones get 5 cm cells, desktops 3.75 cm.
     const surf = createSurf(renderer, !coarse);
     cleanup.push(() => surf.dispose());
-    const u = { time: uniform(0), aspect: uniform(1), cam: uniform(-0.46) };
+    const u = { time: uniform(0), aspect: uniform(1), cam: uniform(options.top ?? -0.46) };
+    // Framed: the view's box in the canvas, its corner and how far the sea runs past it (device px), and the page.
+    const fr = options.frame;
+    const box = uniform(new THREE.Vector4(...(fr ?? [0, 0, 1, 1]))), frameEdge = uniform(new THREE.Vector2());
+    const page = options.source ? new THREE.Texture(options.source as HTMLCanvasElement) : new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+    page.colorSpace = THREE.NoColorSpace; page.flipY = false; page.needsUpdate = true;
+    cleanup.push(() => page.dispose());
     const loader = new THREE.TextureLoader();
     const [sand, normal, roughness] = await Promise.all([options.sand.color, options.sand.normal, options.sand.roughness].map(url =>
       loader.loadAsync(url).then(t => {
@@ -117,7 +138,7 @@ export async function createSwash(options: SwashOptions): Promise<Swash> {
     const lace = createLace(renderer);
     cleanup.push(() => lace.dispose());
     await breathe();
-    const material = createMaterial({ ...u, sand, normal, roughness, caustics: optics.texture, lace, ripples: ripples.texture, wake: wake.texture,
+    const material = createMaterial({ ...u, frame: box, frameEdge, page, sand, normal, roughness, caustics: optics.texture, lace, ripples: ripples.texture, wake: wake.texture,
       surface: surf.surface, drift: surf.drift, matter: surf.matter, groove: surf.groove, cells: [surf.nx, surf.ny], debugView: debug && params.has("surf-view") });
     cleanup.push(() => material.dispose());
     const quad = new THREE.QuadMesh(material);
@@ -127,7 +148,10 @@ export async function createSwash(options: SwashOptions): Promise<Swash> {
     material.vertexNode = vec4(array([float(-1), float(-1), float(3)]).element(vertexIndex), array([float(3), float(-1), float(-1)]).element(vertexIndex), 0, 1);
     const view = new THREE.Scene().add(quad);
 
-    let width = 1, height = 1, still = !!options.still, playing = false, visible = !document.hidden;
+    // the canvas's size, and the view's (the frame's, framed), CSS px
+    let width = 1, height = 1, vw = 1, vh = 1, still = !!options.still, playing = false, visible = !document.hidden;
+    let tide: { from: number; to: number; t0: number; seconds: number } | null = null, top = options.top;
+    const edges = () => frameEdge.value.set((options.radius ?? 0) * pixelRatio, (options.rise ?? 0) * pixelRatio);
     let raf = 0, redrawRaf = 0, previous = 0, grid = 0, accumulator = 0, slow = 0;
     let last: THREE.Vector2 | null = null, lastAt = 0, down = false, hovered: THREE.Vector2 | null = null, hoveredAt = 0;
     const strokes: Stroke[] = [];
@@ -192,8 +216,13 @@ export async function createSwash(options: SwashOptions): Promise<Swash> {
       grid = grid && gap < 1000 / 30 ? grid + 1000 / 60 : now;
       const elapsed = previous ? (now - previous) / 1000 : 1 / 60;
       slow = elapsed > 0.025 ? slow + 1 : Math.max(0, slow - 1);
-      if (slow > 45 && pixelRatio > 0.8) { pixelRatio *= 0.85; renderer.setPixelRatio(pixelRatio); renderer.setSize(width, height, false); slow = 0; }
+      if (slow > 45 && pixelRatio > 0.8) { pixelRatio *= 0.85; renderer.setPixelRatio(pixelRatio); renderer.setSize(width, height, false); edges(); slow = 0; }
       previous = now;
+      if (tide) {
+        const k = Math.min(1, (now - tide.t0) / 1000 / tide.seconds);
+        u.cam.value = tide.from + (tide.to - tide.from) * k * k * (3 - 2 * k);
+        if (k >= 1) tide = null;
+      }
       const delta = Math.min(0.05, elapsed);
       moveHand(delta);
       accumulator += delta;
@@ -214,11 +243,13 @@ export async function createSwash(options: SwashOptions): Promise<Swash> {
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
       width = Math.max(1, rect.width); height = Math.max(1, rect.height);
-      u.aspect.value = width / height;
+      vw = fr ? Math.max(1, width * (fr[2] - fr[0])) : width; vh = fr ? Math.max(1, height * (fr[3] - fr[1])) : height;
+      u.aspect.value = vw / vh;
       // The swash zone a little above the middle (lower on a tall screen): dry sand above it to write on, the surf below.
-      u.cam.value = width >= height ? -0.46 : -0.52;
+      if (!tide) u.cam.value = top ?? (vw >= vh ? -0.46 : -0.52);
       renderer.setPixelRatio(pixelRatio); renderer.setSize(width, height, false);
-      optics.resize(width, height);
+      edges();
+      optics.resize(vw, vh);
       redraw();
     };
     const onVisibility = () => { visible = !document.hidden; sync(); };
@@ -246,14 +277,15 @@ export async function createSwash(options: SwashOptions): Promise<Swash> {
       resize,
       pointer(x, y, kind) {
         if (kind === "up") { down = false; last = null; return; }
-        const p = toStrip(new THREE.Vector2(x / height, u.cam.value + y / height));
+        if (fr) { x -= fr[0] * width; y -= fr[1] * height; }
+        const p = toStrip(new THREE.Vector2(x / vh, u.cam.value + y / vh));
         const now = performance.now();
         const near = hovered && (now - hoveredAt < 150 || p.distanceTo(hovered) < 0.25) && Math.abs(p.x - hovered.x) < SURF.W / 2;
         const speed = hovered && near ? p.distanceTo(hovered) / Math.max(1 / 240, (now - hoveredAt) / 1000) : 0;
         // A hand trailed through the water: rings, stronger the faster it moves (none while the sea is still).
         if (running() && (kind === "hover" || down) && hovered && near) wake.stir(hovered, p, Math.min(1, 0.25 + speed / 1.2));
         if (hovered && near && (kind === "hover" || down)) {
-          const pan = x / width * 2 - 1;
+          const pan = x / vw * 2 - 1;
           // Over water, or digging the sand (a hover over the sand makes no sound).
           if (p.y > -0.15) { heard.water = Math.max(heard.water, speed); heard.x = pan; }
           else if (down) { heard.sand = Math.max(heard.sand, speed); heard.x = pan; }
@@ -280,17 +312,17 @@ export async function createSwash(options: SwashOptions): Promise<Swash> {
         let word = setWord(text, options.font, 1.5, maxWidth, SURF.W / 2, -0.75, 0.022);
         // Clear of what lies over the beach, in order of preference: moved along the shore, set smaller beside it,
         // set smaller below it above the same line, moved down the beach.
-        const pxPerM = height / WORLD_M, margin = 0.15;
-        const toPy = (y: number) => (y / WORLD_M - u.cam.value) * height;
+        const pxPerM = vh / WORLD_M, margin = 0.15;
+        const toPy = (y: number) => (y / WORLD_M - u.cam.value) * vh;
         /** Metres from the view's middle; the word's copy one strip along stays out of view. */
-        const rightLimit = Math.min(width / 2 / pxPerM, SURF.W - view / 2) - margin;
+        const rightLimit = Math.min(vw / 2 / pxPerM, SURF.W - view / 2) - margin;
         for (const box of keepClear) {
           if (!word) break;
-          const left = (word.x - SURF.W / 2 - margin) * pxPerM + width / 2, right = left + (word.width + 2 * margin) * pxPerM;
+          const left = (word.x - SURF.W / 2 - margin) * pxPerM + vw / 2, right = left + (word.width + 2 * margin) * pxPerM;
           const top = toPy(word.y - word.ascent - margin), bottom = toPy(word.y + word.descent + margin);
           if (right < box.left || left > box.right || bottom < box.top || top > box.bottom) continue;
-          const from = (box.right - width / 2) / pxPerM + margin, room = rightLimit - from;
-          const below = word.y - margin - (box.bottom / height + u.cam.value) * WORLD_M;
+          const from = (box.right - vw / 2) / pxPerM + margin, room = rightLimit - from;
+          const below = word.y - margin - (box.bottom / vh + u.cam.value) * WORLD_M;
           if (room >= word.width * 0.55) {
             const fit = Math.min(word.width, room);
             word = setWord(text, options.font, word.size * fit / word.width, fit, SURF.W / 2 + from + fit / 2, word.y, 0.022);
@@ -315,6 +347,11 @@ export async function createSwash(options: SwashOptions): Promise<Swash> {
       },
       play(on) { playing = on; sync(); },
       setStill(on) { still = on; sync(); },
+      pan(to, seconds = 0) {
+        top = to;
+        if (seconds <= 0 || !running()) { tide = null; u.cam.value = to; optics.update(); redraw(); return; }
+        tide = { from: u.cam.value, to, t0: performance.now(), seconds };
+      },
       async listen() {
         const bands = await surf.measure();
         // The strip's bands, from its middle (the view's middle) out to either side, wrapped to the nearest copy.
