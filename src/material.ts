@@ -128,7 +128,8 @@ export function createMaterial(u: SwashUniforms): THREE.MeshBasicNodeMaterial {
     const S = smoothSample(u.surface, q, nx, ny).toVar(), M = smoothSample(u.matter, q.add(warp), nx, ny).toVar();
     // The channels' edges crumble a few millimetres either way, as dug sand does.
     const crumble = vec2(noise(m.mul(38)), noise(m.mul(38).add(5.1))).sub(0.5).mul(0.008).div(vec2(SURF.W, SURF.Y1 - SURF.Y0));
-    const D = sample(u.drift, q).toVar(), Gr = sample(u.groove, q.add(crumble)).toVar();
+    // (The drift as smooth curves too: read cell by cell, the lace it carries drew stair-steps where it ran onto a page.)
+    const D = smoothSample(u.drift, q, nx, ny).toVar(), Gr = sample(u.groove, q.add(crumble)).toVar();
     const off = offStrip(m.y).toVar();
     const onStrip = off.oneMinus().toVar();
     const eta = S.x.toVar(), slope = S.yz.toVar();
@@ -181,8 +182,9 @@ export function createMaterial(u: SwashUniforms): THREE.MeshBasicNodeMaterial {
     sandColour.addAssign(vec3(0.15, 0.16, 0.14).mul(wetSheen).mul(moisture.add(glaze.mul(0.6))).mul(water.oneMinus()));
     sandColour.assign(mix(sandColour, sandColour.mul(vec3(0.9, 0.88, 0.85)).add(vec3(0.012, 0.016, 0.022)), glaze));
     const colour = linear(clamp(sandColour, vec3(0), vec3(1))).toVar();
-    // The page, wet: darker while it holds water, with a faint glaze (on a dark page it shows only as a sheen that dries).
-    const pageWet = pageColour.mul(moisture.mul(-0.35).add(1)).add(vec3(0.022).mul(wetSheen).mul(moisture.add(glaze))).toVar();
+    // The page, wet: darker while it holds water. (No sand under it, so no sand's glints: on a dark page they drew the
+    // sand's grain in grey where the water had been.)
+    const pageWet = pageColour.mul(moisture.mul(-0.35).add(1)).toVar();
     colour.assign(mix(colour, pageWet, outside));
 
     // Water, in linear light.
@@ -254,9 +256,10 @@ export function createMaterial(u: SwashUniforms): THREE.MeshBasicNodeMaterial {
       const surface = under.mul(mirror.oneMinus()).add(reflected.mul(mirror)).add(vec3(1, 0.96, 0.88).mul(highlight)).toVar();
       // On the page, a sheet of clear water over its dark ground, seen from straight above: hardly there but for the sun's
       // sheen, a faint sky, and its lip, the few millimetres at the front where the meniscus curls up and catches the sky.
+      // (The lip turns to the low sky, pale, not the deep blue overhead.)
       const lip = smoothstep(0.0012, 0.0028, film).mul(smoothstep(0.009, 0.0035, film));
-      const onPage = pageWet.mul(0.82).mul(mirror.oneMinus()).add(reflected.mul(mirror.mul(0.35).add(lip.mul(0.3))))
-        .add(vec3(1, 0.96, 0.88).mul(highlight));
+      const onPage = pageWet.mul(0.82).mul(mirror.oneMinus()).add(reflected.mul(mirror.mul(0.35)))
+        .add(vec3(0.62, 0.7, 0.76).mul(lip.mul(0.4))).add(vec3(1, 0.96, 0.88).mul(highlight));
       colour.assign(mix(colour, mix(surface, onPage, outside), water));
     });
 
