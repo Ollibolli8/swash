@@ -1,5 +1,5 @@
 import * as THREE from "three/webgpu";
-import { Fn, If, abs, clamp, cos, exp, float, floor, fract, length, log2, max, min, mix, normalize, pow, reflect, refract, sRGBTransferEOTF, screenSize, sin, smoothstep, texture, uv, vec2, vec3, vec4 } from "three/tsl";
+import { Fn, If, abs, clamp, cos, exp, float, floor, fract, fwidth, length, log2, max, min, mix, normalize, pow, reflect, refract, sRGBTransferEOTF, screenSize, sin, smoothstep, texture, uv, vec2, vec3, vec4 } from "three/tsl";
 import { foamCover, LACE_TILE } from "./foam";
 import { DISPERSION, offStrip, stripUV, toMetres } from "./optics";
 import { ripplesAt } from "./ripples";
@@ -186,6 +186,10 @@ export function createMaterial(u: SwashUniforms): THREE.MeshBasicNodeMaterial {
     // sand's grain in grey where the water had been.)
     const pageWet = pageColour.mul(moisture.mul(-0.35).add(1)).toVar();
     colour.assign(mix(colour, pageWet, outside));
+    // How steeply the water deepens per pixel here, and so how many pixels in from its edge this one is (for its lip on
+    // the page; derivatives only out here, where every pixel of a quad runs).
+    const steep = fwidth(depth).toVar();
+    const fromEdge = depth.sub(0.0012).div(max(steep, 1e-7)).toVar();
 
     // Water, in linear light.
     If(water.greaterThan(0.001), () => {
@@ -254,12 +258,23 @@ export function createMaterial(u: SwashUniforms): THREE.MeshBasicNodeMaterial {
       const ggx = a2.div(nh.mul(nh).mul(a2.sub(1)).add(1).pow(2).mul(Math.PI));
       const highlight = ggx.mul(fresnel(max(sun().dot(half), 0))).mul(1.2).mul(smoothstep(0.002, 0.02, film));
       const surface = under.mul(mirror.oneMinus()).add(reflected.mul(mirror)).add(vec3(1, 0.96, 0.88).mul(highlight)).toVar();
-      // On the page, a sheet of clear water over its dark ground, seen from straight above: hardly there but for the sun's
-      // sheen, a faint sky, and its lip, the few millimetres at the front where the meniscus curls up and catches the sky.
-      // (The lip turns to the low sky, pale, not the deep blue overhead.)
-      const lip = smoothstep(0.0012, 0.0028, film).mul(smoothstep(0.009, 0.0035, film));
-      const onPage = pageWet.mul(0.82).mul(mirror.oneMinus()).add(reflected.mul(mirror.mul(0.35)))
-        .add(vec3(0.62, 0.7, 0.76).mul(lip.mul(0.4))).add(vec3(1, 0.96, 0.88).mul(highlight));
+      // On the page, a sheet of clear water over its dark ground, seen from straight above: hardly there. A faint sky and
+      // a soft sheen, off a surface smoother than the beach's (the wind's ripples at full strength drew the sun's glints
+      // as a grey grain on the black); and as the sheet drains thinner than about a centimetre it goes from sight, so the
+      // page is black again a second after the swash runs back (Mac, 10 November: water left standing 2-8 mm deep on the
+      // page lingered as a grey band for seconds).
+      const pageNormal = normalize(vec3(waveSlope.add(wind.mul(ruffle)).mul(0.4).add(hand.mul(sea)).negate(), 1)).toVar();
+      const pageMirror = fresnel(pageNormal.z);
+      const pnh = max(pageNormal.dot(half), 0);
+      const sheen = a2.div(pnh.mul(pnh).mul(a2.sub(1)).add(1).pow(2).mul(Math.PI)).mul(fresnel(max(sun().dot(half), 0)))
+        .mul(0.26).mul(smoothstep(0.002, 0.02, film));
+      const seen = smoothstep(0.0042, 0.012, film);
+      // Its lip: the front's first two pixels, where the meniscus curls up and catches the low sky, pale (not the deep
+      // blue overhead). Only where the water runs on, deepening steeply from its edge (a swash's front, about 0.3 m per
+      // view height), not round a film left draining (about 0.01), whose edge it drew as a line where the water had been.
+      const lip = smoothstep(0, 1, fromEdge).mul(smoothstep(2, 0.8, fromEdge)).mul(smoothstep(0.04, 0.15, steep.div(pixel)));
+      const onPage = pageWet.mul(0.82).mul(pageMirror.oneMinus()).add(sky(reflect(vec3(0, 0, -1), pageNormal)).mul(pageMirror).mul(seen))
+        .add(vec3(0.62, 0.7, 0.76).mul(lip.mul(0.45))).add(vec3(1, 0.96, 0.88).mul(sheen).mul(seen));
       colour.assign(mix(colour, mix(surface, onPage, outside), water));
     });
 
@@ -282,7 +297,8 @@ export function createMaterial(u: SwashUniforms): THREE.MeshBasicNodeMaterial {
       const strands = smoothstep(reach.add(feather), reach.sub(feather), lace.x).mul(smoothstep(0, 0.06, amount)).toVar();
       // Foam is never quite opaque: thin strands let the water through, and a milky veil hangs between them.
       const opacity = strands.mul(mix(0.5, 0.97, smoothstep(0.15, 0.9, amount).max(fresh))).toVar();
-      const veil = smoothstep(0.05, 0.9, amount).mul(lace.z.mul(0.8).add(0.6)).mul(0.2);
+      // (On the page, half the veil: over the black its haze greyed the whole sheet.)
+      const veil = smoothstep(0.05, 0.9, amount).mul(lace.z.mul(0.8).add(0.6)).mul(0.2).mul(outside.mul(-0.5).add(1));
       opacity.assign(max(opacity, veil).add(lace.y.mul(strands).mul(0.15)));
       // Foam the water left on the sand, fixed to the beach.
       const sandLace = sample(u.lace, m.div(vec2(LACE_M, LACE_M * 0.55)).add(vec2(5.3, 2.9)));

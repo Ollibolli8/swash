@@ -84,9 +84,9 @@ carousel uses it). The box is `[left, top, right, bottom]` as shares of the canv
 its corners (CSS px), and round it the canvas shows the page you give as `source` (a canvas, a decoded image or an
 `ImageBitmap` the size of the canvas). The sea isn't held by the frame: a swash that runs up past the box's top edge
 runs on over the page for up to `rise` CSS px, only as wide as the edge it crossed (it thins out before the corners).
-On the page it is a clear sheet seen from above, so on a dark page little shows but its lace, the sun's sheen and its
-lip, the few millimetres at its front that catch the low sky; it wets the page (darker), drains back into the box,
-and the page dries after it. `pointer` and `write` then work in the box.
+On the page it is a clear sheet seen from above, so on a dark page little shows but its lace, a faint sky, a soft
+sheen and its lip, a pale line along a front that is running on; as the sheet drains thinner than about a centimetre
+it goes from sight, so the page is clear again a second or two after the swash runs back into the box. `pointer` and `write` then work in the box.
 
 `top` sets where the view starts on the beach (world y in view heights; -0.46 on a wide view, -0.52 on a tall one),
 and `pan(top, seconds)` moves it there smoothly: further down the beach the sea fills more of the view and the swash
